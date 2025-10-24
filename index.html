@@ -67,162 +67,151 @@
 </div>
 
 <script>
-const API_URL = "https://script.google.com/macros/s/AKfycby1FvEbnZ8wB07nOvS5Ww6XyNbLkmNQ0iNMK_ewdQlt-M2Sjuzw_yCM3hJui0QGQgYT/exec";
-let registros = [];
+  let registros = JSON.parse(localStorage.getItem('registrosToner') || '[]');
 
-// ---- CARREGAR DADOS DA PLANILHA ----
-async function carregarRegistros() {
-  try {
-    const res = await fetch(API_URL);
-    registros = await res.json();
+  // Atualiza tabela
+  function atualizarTabela() {
+    const tbody = document.getElementById('tabelaRegistros');
+    tbody.innerHTML = '';
+    const escolaFiltro = filtroEscola.value.toLowerCase();
+    const mesFiltro = filtroMes.value;
+
+    registros
+      .filter(r=>{
+        const escolaOk = !escolaFiltro || r.escola.toLowerCase().includes(escolaFiltro);
+        const mesOk = !mesFiltro || r.data.startsWith(mesFiltro);
+        return escolaOk && mesOk;
+      })
+      .forEach((r,i)=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${r.escola}</td>
+          <td>${r.modelo}</td>
+          <td>${r.quantidade}</td>
+          <td>${r.data}</td>
+          <td><button onclick="excluirRegistro(${i})">🗑️</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+  }
+
+  // Registrar
+  formRegistro.addEventListener('submit', e=>{
+    e.preventDefault();
+    const novo = {
+      escola: escola.value.trim(),
+      modelo: modelo.value.trim(),
+      quantidade: quantidade.value,
+      data: data.value
+    };
+    registros.push(novo);
+    localStorage.setItem('registrosToner', JSON.stringify(registros));
+    formRegistro.reset();
     atualizarTabela();
     atualizarDatalists();
-  } catch (err) {
-    console.error("Erro ao carregar dados:", err);
-    alert("Não foi possível carregar os registros do servidor.");
+  });
+
+  // Excluir registro
+  function excluirRegistro(i) {
+    if(confirm('Excluir este registro?')) {
+      registros.splice(i,1);
+      localStorage.setItem('registrosToner', JSON.stringify(registros));
+      atualizarTabela();
+      atualizarDatalists();
+    }
   }
-}
 
-// ---- ATUALIZAR TABELA ----
-function atualizarTabela() {
-  const tbody = document.getElementById('tabelaRegistros');
-  tbody.innerHTML = '';
-  const escolaFiltro = filtroEscola.value.toLowerCase();
-  const mesFiltro = filtroMes.value;
+  // Atualizar datalists de escolas e modelos
+  function atualizarDatalists() {
+    const listaEscolas = document.getElementById('listaEscolas');
+    const listaModelos = document.getElementById('listaModelos');
+    listaEscolas.innerHTML = '';
+    listaModelos.innerHTML = '';
 
-  registros
-    .filter(r => {
-      const escolaOk = !escolaFiltro || r.escola.toLowerCase().includes(escolaFiltro);
-      const mesOk = !mesFiltro || r.data.startsWith(mesFiltro);
-      return escolaOk && mesOk;
-    })
-    .forEach((r, i) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${r.escola}</td>
-        <td>${r.modelo}</td>
-        <td>${r.quantidade}</td>
-        <td>${r.data}</td>
-        <td><button onclick="excluirRegistro(${i})">🗑️</button></td>
-      `;
-      tbody.appendChild(tr);
+    const escolasSet = new Set(registros.map(r => r.escola));
+    const modelosSet = new Set(registros.map(r => r.modelo));
+
+    escolasSet.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e;
+      listaEscolas.appendChild(opt);
     });
-}
-
-// ---- REGISTRAR NOVO DADO ----
-formRegistro.addEventListener('submit', async e => {
-  e.preventDefault();
-  const novo = {
-    escola: escola.value.trim(),
-    modelo: modelo.value.trim(),
-    quantidade: quantidade.value,
-    data: data.value
-  };
-  try {
-    await fetch(API_URL, {
-      method: 'POST',
-      body: JSON.stringify(novo),
-      headers: { 'Content-Type': 'application/json' }
+    modelosSet.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      listaModelos.appendChild(opt);
     });
-    formRegistro.reset();
-    await carregarRegistros();
-  } catch (err) {
-    console.error("Erro ao salvar:", err);
-    alert("Erro ao registrar o dado.");
   }
-});
 
-// ---- EXCLUIR (opcional: só local) ----
-function excluirRegistro(i) {
-  alert("A exclusão direta ainda não está conectada à planilha. Para apagar, remova o registro manualmente no Google Sheets.");
-}
-
-// ---- ATUALIZAR LISTAS ----
-function atualizarDatalists() {
-  const listaEscolas = document.getElementById('listaEscolas');
-  const listaModelos = document.getElementById('listaModelos');
-  listaEscolas.innerHTML = '';
-  listaModelos.innerHTML = '';
-
-  const escolasSet = new Set(registros.map(r => r.escola));
-  const modelosSet = new Set(registros.map(r => r.modelo));
-
-  escolasSet.forEach(e => {
-    const opt = document.createElement('option');
-    opt.value = e;
-    listaEscolas.appendChild(opt);
+  // Filtros
+  filtroEscola.addEventListener('input', atualizarTabela);
+  filtroMes.addEventListener('input', atualizarTabela);
+  btnLimparFiltros.addEventListener('click',()=>{
+    filtroEscola.value='';
+    filtroMes.value='';
+    atualizarTabela();
   });
-  modelosSet.forEach(m => {
-    const opt = document.createElement('option');
-    opt.value = m;
-    listaModelos.appendChild(opt);
+
+  // Exportar PDF
+  btnExportarPDF.addEventListener('click',()=>{
+    if(registros.length===0){ alert('Não há registros para exportar.'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.text('Relatório de Trocas de Toner e Tinta',14,15);
+    doc.autoTable({
+      startY:25,
+      head:[['Escola','Modelo','Quantidade','Data']],
+      body: registros.map(r=>[r.escola,r.modelo,r.quantidade,r.data])
+    });
+    doc.save('Registros_Toner.pdf');
   });
-}
 
-// ---- FILTROS ----
-filtroEscola.addEventListener('input', atualizarTabela);
-filtroMes.addEventListener('input', atualizarTabela);
-btnLimparFiltros.addEventListener('click', () => {
-  filtroEscola.value = '';
-  filtroMes.value = '';
-  atualizarTabela();
-});
-
-// ---- EXPORTAR PDF ----
-btnExportarPDF.addEventListener('click', () => {
-  if (registros.length === 0) { alert('Não há registros para exportar.'); return; }
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  doc.text('Relatório de Trocas de Toner e Tinta', 14, 15);
-  doc.autoTable({
-    startY: 25,
-    head: [['Escola', 'Modelo', 'Quantidade', 'Data']],
-    body: registros.map(r => [r.escola, r.modelo, r.quantidade, r.data])
-  });
-  doc.save('Registros_Toner.pdf');
-});
-
-// ---- IMPRIMIR RELATÓRIO ----
-btnImprimirRelatorio.addEventListener('click', () => {
+  // Imprimir Relatório
+ // Imprimir Relatório
+// Imprimir Relatório
+btnImprimirRelatorio.addEventListener('click',()=>{
   const escola = filtroEscola.value.toLowerCase();
   const mes = filtroMes.value;
 
-  const filtrados = registros.filter(r => {
+  const filtrados = registros.filter(r=>{
     const escolaOk = !escola || r.escola.toLowerCase().includes(escola);
     const mesOk = !mes || r.data.startsWith(mes);
     return escolaOk && mesOk;
   });
 
-  if (filtrados.length === 0) {
-    alert('Nenhum registro encontrado.');
-    return;
+  if(filtrados.length===0){ 
+    alert('Nenhum registro encontrado.'); 
+    return; 
   }
 
+  // Cria resumo de quantidades
   const resumo = {};
   let totalGeral = 0;
-  filtrados.forEach(r => {
+  filtrados.forEach(r=>{
     const key = `${r.escola} - ${r.modelo}`;
     const qtd = parseInt(r.quantidade);
     resumo[key] = (resumo[key] || 0) + qtd;
     totalGeral += qtd;
   });
 
+  // Formatar mês (AAAA-MM → Mês por extenso)
   let mesTexto = '';
-  if (mes) {
+  if(mes){
     const [ano, mesNum] = mes.split('-');
     const nomesMes = [
-      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+      'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'
     ];
-    mesTexto = `${nomesMes[parseInt(mesNum) - 1]} de ${ano}`;
+    mesTexto = `${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
   }
 
+  // Montar HTML do relatório
   let html = `
     <h2 style="text-align:center;">Relatório de Trocas de Toner e Tinta</h2>
     <p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString()}</p>
   `;
-  if (escola) html += `<p><strong>Escola:</strong> ${filtroEscola.value}</p>`;
-  if (mes) html += `<p><strong>Mês:</strong> ${mesTexto}</p>`;
+  if(escola) html += `<p><strong>Escola:</strong> ${filtroEscola.value}</p>`;
+  if(mes) html += `<p><strong>Mês:</strong> ${mesTexto}</p>`;
 
   html += `
     <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%; font-family:sans-serif;">
@@ -232,7 +221,7 @@ btnImprimirRelatorio.addEventListener('click', () => {
       </tr>
   `;
 
-  for (const key in resumo) {
+  for(const key in resumo){
     html += `<tr><td>${key}</td><td>${resumo[key]}</td></tr>`;
   }
 
@@ -250,11 +239,10 @@ btnImprimirRelatorio.addEventListener('click', () => {
   w.print();
 });
 
-// ---- INÍCIO ----
-carregarRegistros();
-</script>
 
+
+  atualizarTabela();
+  atualizarDatalists();
+</script>
 </body>
 </html>
-
-
