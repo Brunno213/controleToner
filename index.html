@@ -67,11 +67,10 @@
 </div>
 
 <script>
-const API_URL = "https://script.google.com/macros/s/AKfycbxREenvJe3mXwIZaLOyaDuG4sPsiMqI8kAJWfmcWHVTsy-mpBdGMZnee9h40vueiYS0/exec"; // substituir
-
+const API_URL = "https://script.google.com/macros/s/AKfycbxREenvJe3mXwIZaLOyaDuG4sPsiMqI8kAJWfmcWHVTsy-mpBdGMZnee9h40vueiYS0/exec";
 let registros = [];
 
-// ---- CARREGAR DADOS ----
+// ---- CARREGAR DADOS DA PLANILHA ----
 async function carregarRegistros() {
   try {
     const res = await fetch(API_URL);
@@ -92,8 +91,11 @@ function atualizarTabela() {
   const mesFiltro = filtroMes.value;
 
   registros
-    .filter(r => (!escolaFiltro || r.escola.toLowerCase().includes(escolaFiltro)) &&
-                 (!mesFiltro || r.data.startsWith(mesFiltro)))
+    .filter(r => {
+      const escolaOk = !escolaFiltro || r.escola.toLowerCase().includes(escolaFiltro);
+      const mesOk = !mesFiltro || r.data.startsWith(mesFiltro);
+      return escolaOk && mesOk;
+    })
     .forEach((r, i) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -101,7 +103,7 @@ function atualizarTabela() {
         <td>${r.modelo}</td>
         <td>${r.quantidade}</td>
         <td>${r.data}</td>
-        <td><button onclick="alert('Exclusão só manual na planilha')">🗑️</button></td>
+        <td><button onclick="excluirRegistro(${i})">🗑️</button></td>
       `;
       tbody.appendChild(tr);
     });
@@ -130,6 +132,11 @@ formRegistro.addEventListener('submit', async e => {
   }
 });
 
+// ---- EXCLUIR (opcional: só local) ----
+function excluirRegistro(i) {
+  alert("A exclusão direta ainda não está conectada à planilha. Para apagar, remova o registro manualmente no Google Sheets.");
+}
+
 // ---- ATUALIZAR LISTAS ----
 function atualizarDatalists() {
   const listaEscolas = document.getElementById('listaEscolas');
@@ -137,12 +144,17 @@ function atualizarDatalists() {
   listaEscolas.innerHTML = '';
   listaModelos.innerHTML = '';
 
-  new Set(registros.map(r => r.escola)).forEach(e => {
-    const opt = document.createElement('option'); opt.value = e;
+  const escolasSet = new Set(registros.map(r => r.escola));
+  const modelosSet = new Set(registros.map(r => r.modelo));
+
+  escolasSet.forEach(e => {
+    const opt = document.createElement('option');
+    opt.value = e;
     listaEscolas.appendChild(opt);
   });
-  new Set(registros.map(r => r.modelo)).forEach(m => {
-    const opt = document.createElement('option'); opt.value = m;
+  modelosSet.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m;
     listaModelos.appendChild(opt);
   });
 }
@@ -151,37 +163,91 @@ function atualizarDatalists() {
 filtroEscola.addEventListener('input', atualizarTabela);
 filtroMes.addEventListener('input', atualizarTabela);
 btnLimparFiltros.addEventListener('click', () => {
-  filtroEscola.value = ''; filtroMes.value = ''; atualizarTabela();
+  filtroEscola.value = '';
+  filtroMes.value = '';
+  atualizarTabela();
 });
 
 // ---- EXPORTAR PDF ----
 btnExportarPDF.addEventListener('click', () => {
-  if (!registros.length) return alert('Não há registros.');
+  if (registros.length === 0) { alert('Não há registros para exportar.'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   doc.text('Relatório de Trocas de Toner e Tinta', 14, 15);
-  doc.autoTable({ startY:25, head:[['Escola','Modelo','Quantidade','Data']], body: registros.map(r => [r.escola,r.modelo,r.quantidade,r.data]) });
+  doc.autoTable({
+    startY: 25,
+    head: [['Escola', 'Modelo', 'Quantidade', 'Data']],
+    body: registros.map(r => [r.escola, r.modelo, r.quantidade, r.data])
+  });
   doc.save('Registros_Toner.pdf');
 });
 
 // ---- IMPRIMIR RELATÓRIO ----
 btnImprimirRelatorio.addEventListener('click', () => {
-  const escola = filtroEscola.value.toLowerCase(), mes = filtroMes.value;
-  const filtrados = registros.filter(r => (!escola || r.escola.toLowerCase().includes(escola)) && (!mes || r.data.startsWith(mes)));
-  if (!filtrados.length) return alert('Nenhum registro encontrado.');
+  const escola = filtroEscola.value.toLowerCase();
+  const mes = filtroMes.value;
 
-  const resumo = {}, totalGeral = filtrados.reduce((acc,r)=>{ const key=r.escola+' - '+r.modelo; resumo[key]=(resumo[key]||0)+parseInt(r.quantidade); return acc+parseInt(r.quantidade); },0);
+  const filtrados = registros.filter(r => {
+    const escolaOk = !escola || r.escola.toLowerCase().includes(escola);
+    const mesOk = !mes || r.data.startsWith(mes);
+    return escolaOk && mesOk;
+  });
+
+  if (filtrados.length === 0) {
+    alert('Nenhum registro encontrado.');
+    return;
+  }
+
+  const resumo = {};
+  let totalGeral = 0;
+  filtrados.forEach(r => {
+    const key = `${r.escola} - ${r.modelo}`;
+    const qtd = parseInt(r.quantidade);
+    resumo[key] = (resumo[key] || 0) + qtd;
+    totalGeral += qtd;
+  });
 
   let mesTexto = '';
-  if(mes){ const [ano, m] = mes.split('-'); const nomes=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']; mesTexto=`${nomes[parseInt(m)-1]} de ${ano}`; }
+  if (mes) {
+    const [ano, mesNum] = mes.split('-');
+    const nomesMes = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    mesTexto = `${nomesMes[parseInt(mesNum) - 1]} de ${ano}`;
+  }
 
-  let html = `<h2 style="text-align:center;">Relatório de Trocas de Toner e Tinta</h2><p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString()}</p>`;
-  if(escola) html+=`<p><strong>Escola:</strong>${filtroEscola.value}</p>`; if(mes) html+=`<p><strong>Mês:</strong>${mesTexto}</p>`;
-  html+=`<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%; font-family:sans-serif;"><tr style="background:#eee; text-align:left;"><th>Escola - Modelo</th><th>Quantidade Total</th></tr>`;
-  for(const key in resumo){ html+=`<tr><td>${key}</td><td>${resumo[key]}</td></tr>`; }
-  html+=`<tr style="font-weight:bold; background:#f0f0f0;"><td>Total Geral</td><td>${totalGeral}</td></tr></table>`;
+  let html = `
+    <h2 style="text-align:center;">Relatório de Trocas de Toner e Tinta</h2>
+    <p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString()}</p>
+  `;
+  if (escola) html += `<p><strong>Escola:</strong> ${filtroEscola.value}</p>`;
+  if (mes) html += `<p><strong>Mês:</strong> ${mesTexto}</p>`;
 
-  const w = window.open(); w.document.write(html); w.document.close(); w.print();
+  html += `
+    <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%; font-family:sans-serif;">
+      <tr style="background:#eee; text-align:left;">
+        <th>Escola - Modelo</th>
+        <th>Quantidade Total</th>
+      </tr>
+  `;
+
+  for (const key in resumo) {
+    html += `<tr><td>${key}</td><td>${resumo[key]}</td></tr>`;
+  }
+
+  html += `
+      <tr style="font-weight:bold; background:#f0f0f0;">
+        <td>Total Geral</td>
+        <td>${totalGeral}</td>
+      </tr>
+    </table>
+  `;
+
+  const w = window.open();
+  w.document.write(html);
+  w.document.close();
+  w.print();
 });
 
 // ---- INÍCIO ----
@@ -190,5 +256,3 @@ carregarRegistros();
 
 </body>
 </html>
-
-
