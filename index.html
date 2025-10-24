@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Controle de Troca de Toner e Tinta</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; padding:20px; }
+    .container { max-width:900px; margin:auto; background:white; padding:20px; border-radius:10px; box-shadow:0 0 8px rgba(0,0,0,0.1); }
+    h2 { text-align:center; color:#444; }
+    form { display:grid; gap:10px; margin-bottom:20px; }
+    label { font-weight:bold; }
+    input, select, button { padding:8px; font-size:14px; border-radius:5px; border:1px solid #ccc; }
+    button { cursor:pointer; background:#40739e; color:white; border:none; }
+    button:hover { background:#2f5d83; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; }
+    th, td { border:1px solid #ccc; padding:8px; text-align:center; }
+    th { background:#40739e; color:white; }
+    #filtros { display:flex; gap:10px; margin-top:20px; align-items:center; flex-wrap:wrap; }
+    #btnLimparFiltros { background:#999; }
+    #btnLimparFiltros:hover { background:#777; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h2>Controle de Trocas de Toner e Tinta</h2>
+
+  <form id="formRegistro">
+    <label>Nome da Escola:</label>
+    <input list="listaEscolas" id="escola" required>
+    <datalist id="listaEscolas"></datalist>
+
+    <label>Modelo do Toner/Tinta:</label>
+    <input list="listaModelos" id="modelo" required>
+    <datalist id="listaModelos"></datalist>
+
+    <label>Quantidade:</label>
+    <input type="number" id="quantidade" min="1" required>
+
+    <label>Data da Troca:</label>
+    <input type="date" id="data" required>
+
+    <button type="submit">Registrar</button>
+  </form>
+
+  <div id="filtros">
+    <input type="text" id="filtroEscola" placeholder="Filtrar por escola...">
+    <input type="month" id="filtroMes">
+    <button id="btnLimparFiltros">Limpar Filtros</button>
+    <button id="btnExportarPDF">Exportar PDF</button>
+    <button id="btnImprimirRelatorio">Imprimir Relatório</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Escola</th>
+        <th>Modelo</th>
+        <th>Quantidade</th>
+        <th>Data</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody id="tabelaRegistros"></tbody>
+  </table>
+</div>
+
+<script>
+  let registros = JSON.parse(localStorage.getItem('registrosToner') || '[]');
+
+  // Atualiza tabela
+  function atualizarTabela() {
+    const tbody = document.getElementById('tabelaRegistros');
+    tbody.innerHTML = '';
+    const escolaFiltro = filtroEscola.value.toLowerCase();
+    const mesFiltro = filtroMes.value;
+
+    registros
+      .filter(r=>{
+        const escolaOk = !escolaFiltro || r.escola.toLowerCase().includes(escolaFiltro);
+        const mesOk = !mesFiltro || r.data.startsWith(mesFiltro);
+        return escolaOk && mesOk;
+      })
+      .forEach((r,i)=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${r.escola}</td>
+          <td>${r.modelo}</td>
+          <td>${r.quantidade}</td>
+          <td>${r.data}</td>
+          <td><button onclick="excluirRegistro(${i})">🗑️</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+  }
+
+  // Registrar
+  formRegistro.addEventListener('submit', e=>{
+    e.preventDefault();
+    const novo = {
+      escola: escola.value.trim(),
+      modelo: modelo.value.trim(),
+      quantidade: quantidade.value,
+      data: data.value
+    };
+    registros.push(novo);
+    localStorage.setItem('registrosToner', JSON.stringify(registros));
+    formRegistro.reset();
+    atualizarTabela();
+    atualizarDatalists();
+  });
+
+  // Excluir registro
+  function excluirRegistro(i) {
+    if(confirm('Excluir este registro?')) {
+      registros.splice(i,1);
+      localStorage.setItem('registrosToner', JSON.stringify(registros));
+      atualizarTabela();
+      atualizarDatalists();
+    }
+  }
+
+  // Atualizar datalists de escolas e modelos
+  function atualizarDatalists() {
+    const listaEscolas = document.getElementById('listaEscolas');
+    const listaModelos = document.getElementById('listaModelos');
+    listaEscolas.innerHTML = '';
+    listaModelos.innerHTML = '';
+
+    const escolasSet = new Set(registros.map(r => r.escola));
+    const modelosSet = new Set(registros.map(r => r.modelo));
+
+    escolasSet.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e;
+      listaEscolas.appendChild(opt);
+    });
+    modelosSet.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      listaModelos.appendChild(opt);
+    });
+  }
+
+  // Filtros
+  filtroEscola.addEventListener('input', atualizarTabela);
+  filtroMes.addEventListener('input', atualizarTabela);
+  btnLimparFiltros.addEventListener('click',()=>{
+    filtroEscola.value='';
+    filtroMes.value='';
+    atualizarTabela();
+  });
+
+  // Exportar PDF
+  btnExportarPDF.addEventListener('click',()=>{
+    if(registros.length===0){ alert('Não há registros para exportar.'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.text('Relatório de Trocas de Toner e Tinta',14,15);
+    doc.autoTable({
+      startY:25,
+      head:[['Escola','Modelo','Quantidade','Data']],
+      body: registros.map(r=>[r.escola,r.modelo,r.quantidade,r.data])
+    });
+    doc.save('Registros_Toner.pdf');
+  });
+
+  // Imprimir Relatório
+ // Imprimir Relatório
+// Imprimir Relatório
+btnImprimirRelatorio.addEventListener('click',()=>{
+  const escola = filtroEscola.value.toLowerCase();
+  const mes = filtroMes.value;
+
+  const filtrados = registros.filter(r=>{
+    const escolaOk = !escola || r.escola.toLowerCase().includes(escola);
+    const mesOk = !mes || r.data.startsWith(mes);
+    return escolaOk && mesOk;
+  });
+
+  if(filtrados.length===0){ 
+    alert('Nenhum registro encontrado.'); 
+    return; 
+  }
+
+  // Cria resumo de quantidades
+  const resumo = {};
+  let totalGeral = 0;
+  filtrados.forEach(r=>{
+    const key = `${r.escola} - ${r.modelo}`;
+    const qtd = parseInt(r.quantidade);
+    resumo[key] = (resumo[key] || 0) + qtd;
+    totalGeral += qtd;
+  });
+
+  // Formatar mês (AAAA-MM → Mês por extenso)
+  let mesTexto = '';
+  if(mes){
+    const [ano, mesNum] = mes.split('-');
+    const nomesMes = [
+      'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'
+    ];
+    mesTexto = `${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
+  }
+
+  // Montar HTML do relatório
+  let html = `
+    <h2 style="text-align:center;">Relatório de Trocas de Toner e Tinta</h2>
+    <p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString()}</p>
+  `;
+  if(escola) html += `<p><strong>Escola:</strong> ${filtroEscola.value}</p>`;
+  if(mes) html += `<p><strong>Mês:</strong> ${mesTexto}</p>`;
+
+  html += `
+    <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%; font-family:sans-serif;">
+      <tr style="background:#eee; text-align:left;">
+        <th>Escola - Modelo</th>
+        <th>Quantidade Total</th>
+      </tr>
+  `;
+
+  for(const key in resumo){
+    html += `<tr><td>${key}</td><td>${resumo[key]}</td></tr>`;
+  }
+
+  html += `
+      <tr style="font-weight:bold; background:#f0f0f0;">
+        <td>Total Geral</td>
+        <td>${totalGeral}</td>
+      </tr>
+    </table>
+  `;
+
+  const w = window.open();
+  w.document.write(html);
+  w.document.close();
+  w.print();
+});
+
+
+
+  atualizarTabela();
+  atualizarDatalists();
+</script>
+</body>
+</html>
