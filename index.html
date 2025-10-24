@@ -253,7 +253,7 @@
 
   btnImprimirRelatorio.addEventListener('click', ()=>{
     const escolaFiltro = filtroEscola.value.toLowerCase();
-    const mes = filtroMes.value;
+    const mes = filtroMes.value; // YYYY-MM
     const filtrados = registros.filter(r=>{
       const escolaOk = !escolaFiltro || (r.escola && r.escola.toLowerCase().includes(escolaFiltro));
       const mesOk = !mes || (r.data && r.data.startsWith(mes));
@@ -270,8 +270,21 @@
       totalGeral += qtd;
     });
 
+    let mesTexto = '';
+    if(mes){
+      const [ano, mesNum] = mes.split('-');
+      const nomesMes = [
+        'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+        'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'
+      ];
+      mesTexto = `${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
+    }
+
     let html = `<h2 style="text-align:center;">Relatório de Trocas de Toner e Tinta</h2>`;
     html += `<p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString()}</p>`;
+    if(mesTexto) html += `<p><strong>Mês do Relatório:</strong> ${mesTexto}</p>`;
+    if(filtroEscola.value) html += `<p><strong>Escola:</strong> ${escapeHtml(filtroEscola.value)}</p>`;
+
     html += `<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%; font-family:sans-serif;">
       <tr style="background:#eee;"><th>Escola - Modelo</th><th>Quantidade</th></tr>`;
     for(const key in resumo){
