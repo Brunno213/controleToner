@@ -1,3 +1,74 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Controle de Troca de Toner e Tinta</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; padding:20px; }
+  .container { max-width:900px; margin:auto; background:white; padding:20px; border-radius:10px; box-shadow:0 0 8px rgba(0,0,0,0.1); }
+  h2 { text-align:center; color:#444; }
+  form { display:grid; gap:10px; margin-bottom:20px; }
+  label { font-weight:bold; }
+  input, select, button { padding:8px; font-size:14px; border-radius:5px; border:1px solid #ccc; }
+  button { cursor:pointer; background:#40739e; color:white; border:none; }
+  button:hover { background:#2f5d83; }
+  table { width:100%; border-collapse:collapse; margin-top:10px; }
+  th, td { border:1px solid #ccc; padding:8px; text-align:center; }
+  th { background:#40739e; color:white; }
+  #filtros { display:flex; gap:10px; margin-top:20px; align-items:center; flex-wrap:wrap; }
+  #btnLimparFiltros { background:#999; }
+  #btnLimparFiltros:hover { background:#777; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Controle de Trocas de Toner e Tinta</h2>
+
+  <form id="formRegistro">
+    <label>Nome da Escola:</label>
+    <input list="listaEscolas" id="escola" required>
+    <datalist id="listaEscolas"></datalist>
+
+    <label>Modelo do Toner/Tinta:</label>
+    <input list="listaModelos" id="modelo" required>
+    <datalist id="listaModelos"></datalist>
+
+    <label>Quantidade:</label>
+    <input type="number" id="quantidade" min="1" required>
+
+    <label>Data da Troca:</label>
+    <input type="date" id="data" required>
+
+    <button type="submit" id="btnSalvar">Registrar</button>
+    <button type="button" id="btnCancelarEdicao" style="display:none; background:#999;">Cancelar Edição</button>
+  </form>
+
+  <div id="filtros">
+    <input type="text" id="filtroEscola" placeholder="Filtrar por escola...">
+    <input type="month" id="filtroMes">
+    <button id="btnLimparFiltros">Limpar Filtros</button>
+    <button id="btnExportarPDF">Exportar PDF</button>
+    <button id="btnImprimirRelatorio">Imprimir Relatório</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Escola</th>
+        <th>Modelo</th>
+        <th>Quantidade</th>
+        <th>Data</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody id="tabelaRegistros"></tbody>
+  </table>
+</div>
+
+<!-- Firebase modular SDKs -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-app.js";
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-analytics.js";
@@ -14,9 +85,10 @@
   };
 
   const app = initializeApp(firebaseConfig);
-  try { getAnalytics(app); } catch(e){ }
+  try { getAnalytics(app); } catch(e){}
   const db = getFirestore(app);
 
+  // Referências
   const formRegistro = document.getElementById('formRegistro');
   const escola = document.getElementById('escola');
   const modelo = document.getElementById('modelo');
@@ -28,10 +100,12 @@
   const btnLimparFiltros = document.getElementById('btnLimparFiltros');
   const btnExportarPDF = document.getElementById('btnExportarPDF');
   const btnImprimirRelatorio = document.getElementById('btnImprimirRelatorio');
+  const btnSalvar = document.getElementById('btnSalvar');
+  const btnCancelarEdicao = document.getElementById('btnCancelarEdicao');
 
   let registros = [];
   let registrosDocs = [];
-  let editandoId = null;
+  let idEmEdicao = null;
 
   function iniciarListener() {
     const q = query(collection(db, 'registros'), orderBy('data', 'desc'));
@@ -54,12 +128,12 @@
     const mesFiltro = filtroMes.value;
 
     registros
-      .filter(r => {
+      .filter(r=>{
         const escolaOk = !escolaFiltro || (r.escola && r.escola.toLowerCase().includes(escolaFiltro));
         const mesOk = !mesFiltro || (r.data && r.data.startsWith(mesFiltro));
         return escolaOk && mesOk;
       })
-      .forEach((r, i) => {
+      .forEach((r,i)=>{
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${escapeHtml(r.escola || '')}</td>
@@ -74,30 +148,32 @@
         tabelaRegistros.appendChild(tr);
       });
 
-    document.querySelectorAll('.btn-excluir').forEach(btn => {
-      btn.addEventListener('click', async () => {
+    document.querySelectorAll('.btn-excluir').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
         const idx = parseInt(btn.getAttribute('data-idx'));
         const docInfo = registrosDocs[idx];
-        if (!confirm('Confirma exclusão deste registro?')) return;
+        if(!confirm('Confirma exclusão deste registro?')) return;
         await deleteDoc(doc(db, 'registros', docInfo.id));
       });
     });
 
-    document.querySelectorAll('.btn-editar').forEach(btn => {
-      btn.addEventListener('click', () => {
+    document.querySelectorAll('.btn-editar').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
         const idx = parseInt(btn.getAttribute('data-idx'));
         const docInfo = registrosDocs[idx];
-        editandoId = docInfo.id;
+        if(!docInfo) return;
+        idEmEdicao = docInfo.id;
         escola.value = docInfo.data.escola;
         modelo.value = docInfo.data.modelo;
         quantidade.value = docInfo.data.quantidade;
         data.value = docInfo.data.data;
-        formRegistro.querySelector('button[type="submit"]').textContent = 'Salvar Alterações';
+        btnSalvar.textContent = "Salvar Alterações";
+        btnCancelarEdicao.style.display = "inline-block";
       });
     });
   }
 
-  formRegistro.addEventListener('submit', async e => {
+  formRegistro.addEventListener('submit', async e=>{
     e.preventDefault();
     const novo = {
       escola: escola.value.trim(),
@@ -105,26 +181,32 @@
       quantidade: quantidade.value,
       data: data.value
     };
-
-    if (!novo.escola || !novo.modelo || !novo.quantidade || !novo.data) {
+    if(!novo.escola || !novo.modelo || !novo.quantidade || !novo.data){
       alert('Preencha todos os campos.');
       return;
     }
 
-    try {
-      if (editandoId) {
-        const ref = doc(db, 'registros', editandoId);
-        await updateDoc(ref, novo);
-        editandoId = null;
-        formRegistro.querySelector('button[type="submit"]').textContent = 'Registrar';
+    try{
+      if(idEmEdicao){
+        await updateDoc(doc(db, 'registros', idEmEdicao), novo);
+        idEmEdicao = null;
+        btnSalvar.textContent = "Registrar";
+        btnCancelarEdicao.style.display = "none";
       } else {
         await addDoc(collection(db, 'registros'), novo);
       }
       formRegistro.reset();
-    } catch (err) {
+    }catch(err){
       console.error('Erro ao salvar:', err);
-      alert('Erro ao registrar ou atualizar o dado.');
+      alert('Erro ao salvar os dados.');
     }
+  });
+
+  btnCancelarEdicao.addEventListener('click', ()=>{
+    idEmEdicao = null;
+    formRegistro.reset();
+    btnSalvar.textContent = "Registrar";
+    btnCancelarEdicao.style.display = "none";
   });
 
   function atualizarDatalists() {
@@ -136,22 +218,79 @@
     const escolasSet = new Set(registros.map(r => r.escola).filter(Boolean));
     const modelosSet = new Set(registros.map(r => r.modelo).filter(Boolean));
 
-    escolasSet.forEach(e => listaEscolas.appendChild(new Option(e)));
-    modelosSet.forEach(m => listaModelos.appendChild(new Option(m)));
+    escolasSet.forEach(e=>{
+      const opt = document.createElement('option');
+      opt.value = e;
+      listaEscolas.appendChild(opt);
+    });
+    modelosSet.forEach(m=>{
+      const opt = document.createElement('option');
+      opt.value = m;
+      listaModelos.appendChild(opt);
+    });
   }
 
   filtroEscola.addEventListener('input', atualizarTabela);
   filtroMes.addEventListener('input', atualizarTabela);
-  btnLimparFiltros.addEventListener('click', () => {
-    filtroEscola.value = '';
-    filtroMes.value = '';
+  btnLimparFiltros.addEventListener('click', ()=>{
+    filtroEscola.value='';
+    filtroMes.value='';
     atualizarTabela();
   });
 
-  function escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+  btnExportarPDF.addEventListener('click', ()=>{
+    if(registros.length===0){ alert('Não há registros para exportar.'); return; }
+    const { jsPDF } = window.jspdf;
+    const docPdf = new jsPDF();
+    docPdf.text('Relatório de Trocas de Toner e Tinta',14,15);
+    docPdf.autoTable({
+      startY:25,
+      head:[['Escola','Modelo','Quantidade','Data']],
+      body: registros.map(r=>[r.escola,r.modelo,r.quantidade,r.data])
+    });
+    docPdf.save('Registros_Toner.pdf');
+  });
+
+  btnImprimirRelatorio.addEventListener('click', ()=>{
+    const escolaFiltro = filtroEscola.value.toLowerCase();
+    const mes = filtroMes.value;
+    const filtrados = registros.filter(r=>{
+      const escolaOk = !escolaFiltro || (r.escola && r.escola.toLowerCase().includes(escolaFiltro));
+      const mesOk = !mes || (r.data && r.data.startsWith(mes));
+      return escolaOk && mesOk;
+    });
+    if(filtrados.length===0){ alert('Nenhum registro encontrado.'); return; }
+
+    const resumo = {};
+    let totalGeral = 0;
+    filtrados.forEach(r=>{
+      const key = `${r.escola} - ${r.modelo}`;
+      const qtd = parseInt(r.quantidade) || 0;
+      resumo[key] = (resumo[key] || 0) + qtd;
+      totalGeral += qtd;
+    });
+
+    let html = `<h2 style="text-align:center;">Relatório de Trocas de Toner e Tinta</h2>`;
+    html += `<p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString()}</p>`;
+    html += `<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%; font-family:sans-serif;">
+      <tr style="background:#eee;"><th>Escola - Modelo</th><th>Quantidade</th></tr>`;
+    for(const key in resumo){
+      html += `<tr><td>${escapeHtml(key)}</td><td>${resumo[key]}</td></tr>`;
+    }
+    html += `<tr style="font-weight:bold;"><td>Total Geral</td><td>${totalGeral}</td></tr></table>`;
+
+    const w = window.open();
+    w.document.write(html);
+    w.document.close();
+    w.print();
+  });
+
+  function escapeHtml(str){
+    if(!str) return '';
+    return String(str).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
 
   iniciarListener();
 </script>
+</body>
+</html>
