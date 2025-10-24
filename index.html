@@ -1,80 +1,8 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Controle de Troca de Toner e Tinta</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
-<style>
-  body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; padding:20px; }
-  .container { max-width:900px; margin:auto; background:white; padding:20px; border-radius:10px; box-shadow:0 0 8px rgba(0,0,0,0.1); }
-  h2 { text-align:center; color:#444; }
-  form { display:grid; gap:10px; margin-bottom:20px; }
-  label { font-weight:bold; }
-  input, select, button { padding:8px; font-size:14px; border-radius:5px; border:1px solid #ccc; }
-  button { cursor:pointer; background:#40739e; color:white; border:none; }
-  button:hover { background:#2f5d83; }
-  table { width:100%; border-collapse:collapse; margin-top:10px; }
-  th, td { border:1px solid #ccc; padding:8px; text-align:center; }
-  th { background:#40739e; color:white; }
-  #filtros { display:flex; gap:10px; margin-top:20px; align-items:center; flex-wrap:wrap; }
-  #btnLimparFiltros { background:#999; }
-  #btnLimparFiltros:hover { background:#777; }
-</style>
-</head>
-<body>
-<div class="container">
-  <h2>Controle de Trocas de Toner e Tinta</h2>
-
-  <form id="formRegistro">
-    <label>Nome da Escola:</label>
-    <input list="listaEscolas" id="escola" required>
-    <datalist id="listaEscolas"></datalist>
-
-    <label>Modelo do Toner/Tinta:</label>
-    <input list="listaModelos" id="modelo" required>
-    <datalist id="listaModelos"></datalist>
-
-    <label>Quantidade:</label>
-    <input type="number" id="quantidade" min="1" required>
-
-    <label>Data da Troca:</label>
-    <input type="date" id="data" required>
-
-    <button type="submit">Registrar</button>
-  </form>
-
-  <div id="filtros">
-    <input type="text" id="filtroEscola" placeholder="Filtrar por escola...">
-    <input type="month" id="filtroMes">
-    <button id="btnLimparFiltros">Limpar Filtros</button>
-    <button id="btnExportarPDF">Exportar PDF</button>
-    <button id="btnImprimirRelatorio">Imprimir Relatório</button>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Escola</th>
-        <th>Modelo</th>
-        <th>Quantidade</th>
-        <th>Data</th>
-        <th>Ações</th>
-      </tr>
-    </thead>
-    <tbody id="tabelaRegistros"></tbody>
-  </table>
-</div>
-
-<!-- Firebase modular SDKs (usando módulos ES) -->
 <script type="module">
-  // Imports (versões compatíveis com GitHub Pages)
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-app.js";
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-analytics.js";
-  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-firestore.js";
+  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-firestore.js";
 
-  // --- SUA CONFIGURAÇÃO FIREBASE (já fornecida) ---
   const firebaseConfig = {
     apiKey: "AIzaSyBSAMAhiEbBPCNqNpv-dM64Pa_xclwqc54",
     authDomain: "controletoner.firebaseapp.com",
@@ -85,12 +13,10 @@
     measurementId: "G-HVQ1MN2HBD"
   };
 
-  // Inicializa Firebase
   const app = initializeApp(firebaseConfig);
-  try { getAnalytics(app); } catch(e){ /* Analytics pode falhar em alguns ambientes */ }
+  try { getAnalytics(app); } catch(e){ }
   const db = getFirestore(app);
 
-  // Referências DOM
   const formRegistro = document.getElementById('formRegistro');
   const escola = document.getElementById('escola');
   const modelo = document.getElementById('modelo');
@@ -104,9 +30,9 @@
   const btnImprimirRelatorio = document.getElementById('btnImprimirRelatorio');
 
   let registros = [];
-  let registrosDocs = []; // manter id se precisar deletar
+  let registrosDocs = [];
+  let editandoId = null;
 
-  // Carregar registros em tempo real (onSnapshot)
   function iniciarListener() {
     const q = query(collection(db, 'registros'), orderBy('data', 'desc'));
     onSnapshot(q, snapshot => {
@@ -119,55 +45,59 @@
       });
       atualizarTabela();
       atualizarDatalists();
-    }, err => {
-      console.error('Erro no listener do Firestore:', err);
-      alert('Não foi possível conectar ao banco de dados (verifique as regras/Internet).');
     });
   }
 
-  // Atualizar tabela
   function atualizarTabela() {
     tabelaRegistros.innerHTML = '';
     const escolaFiltro = filtroEscola.value.toLowerCase();
     const mesFiltro = filtroMes.value;
 
     registros
-      .filter(r=>{
+      .filter(r => {
         const escolaOk = !escolaFiltro || (r.escola && r.escola.toLowerCase().includes(escolaFiltro));
         const mesOk = !mesFiltro || (r.data && r.data.startsWith(mesFiltro));
         return escolaOk && mesOk;
       })
-      .forEach((r,i)=>{
+      .forEach((r, i) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${escapeHtml(r.escola || '')}</td>
           <td>${escapeHtml(r.modelo || '')}</td>
           <td>${escapeHtml(r.quantidade || '')}</td>
           <td>${escapeHtml(r.data || '')}</td>
-          <td><button data-idx="${i}" class="btn-excluir">🗑️</button></td>
+          <td>
+            <button data-idx="${i}" class="btn-editar">✏️</button>
+            <button data-idx="${i}" class="btn-excluir">🗑️</button>
+          </td>
         `;
         tabelaRegistros.appendChild(tr);
       });
 
-    // vincular exclusão local (usa registrosDocs para id real)
-    document.querySelectorAll('.btn-excluir').forEach(btn=>{
-      btn.addEventListener('click', async (e)=>{
+    document.querySelectorAll('.btn-excluir').forEach(btn => {
+      btn.addEventListener('click', async () => {
         const idx = parseInt(btn.getAttribute('data-idx'));
         const docInfo = registrosDocs[idx];
-        if(!docInfo){ alert('Documento não encontrado para exclusão'); return; }
-        if(!confirm('Confirma exclusão deste registro?')) return;
-        try{
-          await deleteDoc(doc(db, 'registros', docInfo.id));
-        }catch(err){
-          console.error('Erro ao excluir:', err);
-          alert('Erro ao excluir registro.');
-        }
+        if (!confirm('Confirma exclusão deste registro?')) return;
+        await deleteDoc(doc(db, 'registros', docInfo.id));
+      });
+    });
+
+    document.querySelectorAll('.btn-editar').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-idx'));
+        const docInfo = registrosDocs[idx];
+        editandoId = docInfo.id;
+        escola.value = docInfo.data.escola;
+        modelo.value = docInfo.data.modelo;
+        quantidade.value = docInfo.data.quantidade;
+        data.value = docInfo.data.data;
+        formRegistro.querySelector('button[type="submit"]').textContent = 'Salvar Alterações';
       });
     });
   }
 
-  // Registrar novo registro
-  formRegistro.addEventListener('submit', async e=>{
+  formRegistro.addEventListener('submit', async e => {
     e.preventDefault();
     const novo = {
       escola: escola.value.trim(),
@@ -175,20 +105,28 @@
       quantidade: quantidade.value,
       data: data.value
     };
-    if(!novo.escola || !novo.modelo || !novo.quantidade || !novo.data){
+
+    if (!novo.escola || !novo.modelo || !novo.quantidade || !novo.data) {
       alert('Preencha todos os campos.');
       return;
     }
-    try{
-      await addDoc(collection(db, 'registros'), novo);
+
+    try {
+      if (editandoId) {
+        const ref = doc(db, 'registros', editandoId);
+        await updateDoc(ref, novo);
+        editandoId = null;
+        formRegistro.querySelector('button[type="submit"]').textContent = 'Registrar';
+      } else {
+        await addDoc(collection(db, 'registros'), novo);
+      }
       formRegistro.reset();
-    }catch(err){
-      console.error('Erro ao salvar no Firestore:', err);
-      alert('Erro ao registrar o dado. Verifique as regras do Firestore.');
+    } catch (err) {
+      console.error('Erro ao salvar:', err);
+      alert('Erro ao registrar ou atualizar o dado.');
     }
   });
 
-  // Atualizar datalists
   function atualizarDatalists() {
     const listaEscolas = document.getElementById('listaEscolas');
     const listaModelos = document.getElementById('listaModelos');
@@ -198,108 +136,22 @@
     const escolasSet = new Set(registros.map(r => r.escola).filter(Boolean));
     const modelosSet = new Set(registros.map(r => r.modelo).filter(Boolean));
 
-    escolasSet.forEach(e=>{
-      const opt = document.createElement('option');
-      opt.value = e;
-      listaEscolas.appendChild(opt);
-    });
-
-    modelosSet.forEach(m=>{
-      const opt = document.createElement('option');
-      opt.value = m;
-      listaModelos.appendChild(opt);
-    });
+    escolasSet.forEach(e => listaEscolas.appendChild(new Option(e)));
+    modelosSet.forEach(m => listaModelos.appendChild(new Option(m)));
   }
 
-  // Filtros
   filtroEscola.addEventListener('input', atualizarTabela);
   filtroMes.addEventListener('input', atualizarTabela);
-  btnLimparFiltros.addEventListener('click', ()=>{
-    filtroEscola.value='';
-    filtroMes.value='';
+  btnLimparFiltros.addEventListener('click', () => {
+    filtroEscola.value = '';
+    filtroMes.value = '';
     atualizarTabela();
   });
 
-  // Exportar PDF
-  btnExportarPDF.addEventListener('click', ()=>{
-    if(registros.length===0){ alert('Não há registros para exportar.'); return; }
-    const { jsPDF } = window.jspdf;
-    const docPdf = new jsPDF();
-    docPdf.text('Relatório de Trocas de Toner e Tinta',14,15);
-    docPdf.autoTable({
-      startY:25,
-      head:[['Escola','Modelo','Quantidade','Data']],
-      body: registros.map(r=>[r.escola,r.modelo,r.quantidade,r.data])
-    });
-    docPdf.save('Registros_Toner.pdf');
-  });
-
-  // Imprimir relatório
-  btnImprimirRelatorio.addEventListener('click', ()=>{
-    const escolaFiltro = filtroEscola.value.toLowerCase();
-    const mes = filtroMes.value;
-
-    const filtrados = registros.filter(r=>{
-      const escolaOk = !escolaFiltro || (r.escola && r.escola.toLowerCase().includes(escolaFiltro));
-      const mesOk = !mes || (r.data && r.data.startsWith(mes));
-      return escolaOk && mesOk;
-    });
-
-    if(filtrados.length===0){ alert('Nenhum registro encontrado.'); return; }
-
-    const resumo = {};
-    let totalGeral = 0;
-    filtrados.forEach(r=>{
-      const key = `${r.escola} - ${r.modelo}`;
-      const qtd = parseInt(r.quantidade) || 0;
-      resumo[key] = (resumo[key] || 0) + qtd;
-      totalGeral += qtd;
-    });
-
-    let mesTexto = '';
-    if(mes){
-      const [ano, mesNum] = mes.split('-');
-      const nomesMes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-      mesTexto = `${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
-    }
-
-    let html = `<h2 style="text-align:center;">Relatório de Trocas de Toner e Tinta</h2>`;
-    html += `<p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString()}</p>`;
-    if(escolaFiltro) html += `<p><strong>Escola:</strong> ${filtroEscola.value}</p>`;
-    if(mes) html += `<p><strong>Mês:</strong> ${mesTexto}</p>`;
-
-    html += `<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%; font-family:sans-serif;">
-      <tr style="background:#eee; text-align:left;">
-        <th>Escola - Modelo</th>
-        <th>Quantidade Total</th>
-      </tr>`;
-
-    for(const key in resumo){
-      html += `<tr><td>${escapeHtml(key)}</td><td>${resumo[key]}</td></tr>`;
-    }
-
-    html += `<tr style="font-weight:bold; background:#f0f0f0;">
-        <td>Total Geral</td>
-        <td>${totalGeral}</td>
-      </tr></table>`;
-
-    const w = window.open();
-    w.document.write(html);
-    w.document.close();
-    w.print();
-  });
-
-  // Utilitários
-  function escapeHtml(str){
-    if(!str) return '';
-    return String(str).replace(/[&<>"']/g, function(m){
-      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]);
-    });
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
   }
 
-  // Inicializa listener
   iniciarListener();
-
 </script>
-</body>
-</html>
