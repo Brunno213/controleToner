@@ -252,51 +252,76 @@
   });
 
   btnImprimirRelatorio.addEventListener('click', ()=>{
-    const escolaFiltro = filtroEscola.value.toLowerCase();
-    const mes = filtroMes.value; // YYYY-MM
-    const filtrados = registros.filter(r=>{
-      const escolaOk = !escolaFiltro || (r.escola && r.escola.toLowerCase().includes(escolaFiltro));
-      const mesOk = !mes || (r.data && r.data.startsWith(mes));
-      return escolaOk && mesOk;
-    });
-    if(filtrados.length===0){ alert('Nenhum registro encontrado.'); return; }
-
-    const resumo = {};
-    let totalGeral = 0;
-    filtrados.forEach(r=>{
-      const key = `${r.escola} - ${r.modelo}`;
-      const qtd = parseInt(r.quantidade) || 0;
-      resumo[key] = (resumo[key] || 0) + qtd;
-      totalGeral += qtd;
-    });
-
-    let mesTexto = '';
-    if(mes){
-      const [ano, mesNum] = mes.split('-');
-      const nomesMes = [
-        'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-        'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'
-      ];
-      mesTexto = `${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
-    }
-
-    let html = `<h2 style="text-align:center;">Relatório de Trocas de Toner e Tinta</h2>`;
-    html += `<p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString()}</p>`;
-    if(mesTexto) html += `<p><strong>Mês do Relatório:</strong> ${mesTexto}</p>`;
-    if(filtroEscola.value) html += `<p><strong>Escola:</strong> ${escapeHtml(filtroEscola.value)}</p>`;
-
-    html += `<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%; font-family:sans-serif;">
-      <tr style="background:#eee;"><th>Escola - Modelo</th><th>Quantidade</th></tr>`;
-    for(const key in resumo){
-      html += `<tr><td>${escapeHtml(key)}</td><td>${resumo[key]}</td></tr>`;
-    }
-    html += `<tr style="font-weight:bold;"><td>Total Geral</td><td>${totalGeral}</td></tr></table>`;
-
-    const w = window.open();
-    w.document.write(html);
-    w.document.close();
-    w.print();
+  const escolaFiltro = filtroEscola.value.toLowerCase();
+  const mes = filtroMes.value;
+  const filtrados = registros.filter(r=>{
+    const escolaOk = !escolaFiltro || (r.escola && r.escola.toLowerCase().includes(escolaFiltro));
+    const mesOk = !mes || (r.data && r.data.startsWith(mes));
+    return escolaOk && mesOk;
   });
+  if(filtrados.length === 0){
+    alert('Nenhum registro encontrado.');
+    return;
+  }
+
+  const resumo = {};
+  let totalGeral = 0;
+  filtrados.forEach(r=>{
+    const key = `${r.escola} - ${r.modelo}`;
+    const qtd = parseInt(r.quantidade) || 0;
+
+    if(!resumo[key]) resumo[key] = [];
+    resumo[key].push({ qtd, data: r.data });
+
+    totalGeral += qtd;
+  });
+
+  let mesTexto = '';
+  if(mes){
+    const [ano, mesNum] = mes.split('-');
+    const nomesMes = [
+      'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'
+    ];
+    mesTexto = `${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
+  }
+
+  let html = `<h2 style="text-align:center;">Relatório de Trocas de Toner e Tinta</h2>`;
+  html += `<p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString()}</p>`;
+  if(mesTexto) html += `<p><strong>Mês do Relatório:</strong> ${mesTexto}</p>`;
+  if(filtroEscola.value) html += `<p><strong>Escola:</strong> ${escapeHtml(filtroEscola.value)}</p>`;
+
+  html += `
+  <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%; font-family:sans-serif;">
+    <tr style="background:#eee;">
+      <th>Escola - Modelo</th>
+      <th>Quantidade</th>
+      <th>Data</th>
+    </tr>`;
+
+  for(const key in resumo){
+    resumo[key].forEach((item, idx) => {
+      html += `<tr>
+        <td>${idx === 0 ? escapeHtml(key) : ''}</td>
+        <td>${item.qtd}</td>
+        <td>${item.data}</td>
+      </tr>`;
+    });
+  }
+
+  html += `
+  <tr style="font-weight:bold;">
+    <td>Total Geral</td>
+    <td>${totalGeral}</td>
+    <td></td>
+  </tr></table>`;
+
+  const w = window.open();
+  w.document.write(html);
+  w.document.close();
+  w.print();
+});
+
 
   function escapeHtml(str){
     if(!str) return '';
@@ -307,3 +332,4 @@
 </script>
 </body>
 </html>
+
