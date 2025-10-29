@@ -422,14 +422,20 @@
       alert('O navegador bloqueou o pop-up. Permita pop-ups para usar a impressão.');
       return;
     }
-    novaJanela.document.open();
+       novaJanela.document.open();
     novaJanela.document.write(html);
     novaJanela.document.close();
   });
 
   function escapeHtml(str){
     if(!str) return '';
-    return String(str).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    return String(str).replace(/[&<>"']/g, m=>({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+    }[m]));
   }
 
   iniciarListener();
