@@ -52,6 +52,7 @@
     <button id="btnLimparFiltros">Limpar Filtros</button>
     <button id="btnExportarPDF">Exportar PDF</button>
     <button id="btnImprimirRelatorio">Imprimir Relatório</button>
+    <button id="btnEditarListas" style="background:#6c5ce7;">Editar Escolas/Modelos</button>
   </div>
 
   <table>
@@ -71,8 +72,7 @@
 <!-- Firebase modular SDKs -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-analytics.js";
-  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-firestore.js";
+  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, deleteDoc, updateDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBSAMAhiEbBPCNqNpv-dM64Pa_xclwqc54",
@@ -85,10 +85,8 @@
   };
 
   const app = initializeApp(firebaseConfig);
-  try { getAnalytics(app); } catch(e){}
   const db = getFirestore(app);
 
-  // Referências
   const formRegistro = document.getElementById('formRegistro');
   const escola = document.getElementById('escola');
   const modelo = document.getElementById('modelo');
@@ -102,6 +100,7 @@
   const btnImprimirRelatorio = document.getElementById('btnImprimirRelatorio');
   const btnSalvar = document.getElementById('btnSalvar');
   const btnCancelarEdicao = document.getElementById('btnCancelarEdicao');
+  const btnEditarListas = document.getElementById('btnEditarListas');
 
   let registros = [];
   let registrosDocs = [];
@@ -230,6 +229,35 @@
     });
   }
 
+  // --- NOVA FUNÇÃO: editar listas de escolas e modelos ---
+  btnEditarListas.addEventListener('click', async ()=>{
+    const escolas = Array.from(new Set(registros.map(r=>r.escola).filter(Boolean)));
+    const modelos = Array.from(new Set(registros.map(r=>r.modelo).filter(Boolean)));
+
+    const novaEscola = prompt("Editar lista de escolas (separe por vírgulas):", escolas.join(', '));
+    if(novaEscola === null) return;
+    const novasEscolas = novaEscola.split(',').map(e=>e.trim()).filter(Boolean);
+
+    const novoModelo = prompt("Editar lista de modelos (separe por vírgulas):", modelos.join(', '));
+    if(novoModelo === null) return;
+    const novosModelos = novoModelo.split(',').map(e=>e.trim()).filter(Boolean);
+
+    const listaEscolas = document.getElementById('listaEscolas');
+    const listaModelos = document.getElementById('listaModelos');
+    listaEscolas.innerHTML = '';
+    listaModelos.innerHTML = '';
+    novasEscolas.forEach(e=>{
+      const opt = document.createElement('option');
+      opt.value = e;
+      listaEscolas.appendChild(opt);
+    });
+    novosModelos.forEach(m=>{
+      const opt = document.createElement('option');
+      opt.value = m;
+      listaModelos.appendChild(opt);
+    });
+  });
+
   filtroEscola.addEventListener('input', atualizarTabela);
   filtroMes.addEventListener('input', atualizarTabela);
   btnLimparFiltros.addEventListener('click', ()=>{
@@ -238,90 +266,36 @@
     atualizarTabela();
   });
 
+  // --- MELHORADO: Exportar PDF filtrando por mês ---
   btnExportarPDF.addEventListener('click', ()=>{
-    if(registros.length===0){ alert('Não há registros para exportar.'); return; }
     const { jsPDF } = window.jspdf;
     const docPdf = new jsPDF();
-    docPdf.text('Relatório de Trocas de Toner e Tinta',14,15);
+    const escolaFiltro = filtroEscola.value.toLowerCase();
+    const mesFiltro = filtroMes.value;
+
+    const filtrados = registros.filter(r=>{
+      const escolaOk = !escolaFiltro || (r.escola && r.escola.toLowerCase().includes(escolaFiltro));
+      const mesOk = !mesFiltro || (r.data && r.data.startsWith(mesFiltro));
+      return escolaOk && mesOk;
+    });
+
+    if(filtrados.length===0){ alert('Não há registros para exportar.'); return; }
+
+    let titulo = 'Relatório de Trocas de Toner e Tinta';
+    if(mesFiltro){
+      const [ano, mesNum] = mesFiltro.split('-');
+      const nomesMes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+      titulo += ` - ${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
+    }
+
+    docPdf.text(titulo,14,15);
     docPdf.autoTable({
       startY:25,
       head:[['Escola','Modelo','Quantidade','Data']],
-      body: registros.map(r=>[r.escola,r.modelo,r.quantidade,r.data])
+      body: filtrados.map(r=>[r.escola,r.modelo,r.quantidade,r.data])
     });
     docPdf.save('Registros_Toner.pdf');
   });
-
-  btnImprimirRelatorio.addEventListener('click', ()=>{
-  const escolaFiltro = filtroEscola.value.toLowerCase();
-  const mes = filtroMes.value;
-  const filtrados = registros.filter(r=>{
-    const escolaOk = !escolaFiltro || (r.escola && r.escola.toLowerCase().includes(escolaFiltro));
-    const mesOk = !mes || (r.data && r.data.startsWith(mes));
-    return escolaOk && mesOk;
-  });
-  if(filtrados.length === 0){
-    alert('Nenhum registro encontrado.');
-    return;
-  }
-
-  const resumo = {};
-  let totalGeral = 0;
-  filtrados.forEach(r=>{
-    const key = `${r.escola} - ${r.modelo}`;
-    const qtd = parseInt(r.quantidade) || 0;
-
-    if(!resumo[key]) resumo[key] = [];
-    resumo[key].push({ qtd, data: r.data });
-
-    totalGeral += qtd;
-  });
-
-  let mesTexto = '';
-  if(mes){
-    const [ano, mesNum] = mes.split('-');
-    const nomesMes = [
-      'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'
-    ];
-    mesTexto = `${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
-  }
-
-  let html = `<h2 style="text-align:center;">Relatório de Trocas de Toner e Tinta</h2>`;
-  html += `<p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString()}</p>`;
-  if(mesTexto) html += `<p><strong>Mês do Relatório:</strong> ${mesTexto}</p>`;
-  if(filtroEscola.value) html += `<p><strong>Escola:</strong> ${escapeHtml(filtroEscola.value)}</p>`;
-
-  html += `
-  <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%; font-family:sans-serif;">
-    <tr style="background:#eee;">
-      <th>Escola - Modelo</th>
-      <th>Quantidade</th>
-      <th>Data</th>
-    </tr>`;
-
-  for(const key in resumo){
-    resumo[key].forEach((item, idx) => {
-      html += `<tr>
-        <td>${idx === 0 ? escapeHtml(key) : ''}</td>
-        <td>${item.qtd}</td>
-        <td>${item.data}</td>
-      </tr>`;
-    });
-  }
-
-  html += `
-  <tr style="font-weight:bold;">
-    <td>Total Geral</td>
-    <td>${totalGeral}</td>
-    <td></td>
-  </tr></table>`;
-
-  const w = window.open();
-  w.document.write(html);
-  w.document.close();
-  w.print();
-});
-
 
   function escapeHtml(str){
     if(!str) return '';
@@ -332,4 +306,3 @@
 </script>
 </body>
 </html>
-
