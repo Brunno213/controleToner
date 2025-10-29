@@ -118,6 +118,8 @@
       });
       atualizarTabela();
       atualizarDatalists();
+    }, err => {
+      console.error('Erro no listener do Firestore:', err);
     });
   }
 
@@ -147,25 +149,32 @@
         tabelaRegistros.appendChild(tr);
       });
 
+    // adiciona listeners depois de renderizar
     document.querySelectorAll('.btn-excluir').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
+      btn.addEventListener('click', async ()=> {
         const idx = parseInt(btn.getAttribute('data-idx'));
         const docInfo = registrosDocs[idx];
+        if(!docInfo) return alert('Registro não encontrado.');
         if(!confirm('Confirma exclusão deste registro?')) return;
-        await deleteDoc(doc(db, 'registros', docInfo.id));
+        try {
+          await deleteDoc(doc(db, 'registros', docInfo.id));
+        } catch(err) {
+          console.error('Erro ao excluir:', err);
+          alert('Erro ao excluir registro.');
+        }
       });
     });
 
     document.querySelectorAll('.btn-editar').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
+      btn.addEventListener('click', ()=> {
         const idx = parseInt(btn.getAttribute('data-idx'));
         const docInfo = registrosDocs[idx];
-        if(!docInfo) return;
+        if(!docInfo) return alert('Registro não encontrado.');
         idEmEdicao = docInfo.id;
-        escola.value = docInfo.data.escola;
-        modelo.value = docInfo.data.modelo;
-        quantidade.value = docInfo.data.quantidade;
-        data.value = docInfo.data.data;
+        escola.value = docInfo.data.escola || '';
+        modelo.value = docInfo.data.modelo || '';
+        quantidade.value = docInfo.data.quantidade || '';
+        data.value = docInfo.data.data || '';
         btnSalvar.textContent = "Salvar Alterações";
         btnCancelarEdicao.style.display = "inline-block";
       });
@@ -277,36 +286,54 @@
     return filtrados;
   }
 
-  // PDF
+  // Exportar PDF (com verificação segura do jsPDF)
   btnExportarPDF.addEventListener('click', ()=>{
-    const { jsPDF } = window.jspdf;
-    const docPdf = new jsPDF();
+    try {
+      // obter construtor do jsPDF de forma tolerante
+      const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || null;
+      if(!jsPDFCtor){
+        alert('Biblioteca jsPDF não carregada corretamente.');
+        return;
+      }
+      const docPdf = new jsPDFCtor();
+      const filtrados = gerarDadosFiltrados();
+      if (filtrados.length === 0) {
+        alert('Não há registros para exportar.');
+        return;
+      }
 
-    const filtrados = gerarDadosFiltrados();
-    if (filtrados.length === 0) {
-      alert('Não há registros para exportar.');
-      return;
+      let titulo = 'Relatório de Trocas de Toner e Tinta';
+      const mesFiltro = filtroMes.value;
+      if (mesFiltro) {
+        const [ano, mesNum] = mesFiltro.split('-');
+        const nomesMes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+        titulo += ` - ${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
+      }
+
+      docPdf.text(titulo, 14, 15);
+      docPdf.autoTable({
+        startY: 25,
+        head: [['Escola', 'Modelo', 'Quantidade', 'Data']],
+        body: filtrados.map(r => [r.escola, r.modelo, r.quantidade, r.data]),
+      });
+
+      // posição segura para o texto do total
+      let finalY = 40;
+      if (docPdf.lastAutoTable && typeof docPdf.lastAutoTable.finalY === 'number') {
+        finalY = docPdf.lastAutoTable.finalY + 10;
+      } else {
+        // fallback aproximado: cada linha ~8pt
+        finalY = 25 + (filtrados.length + 2) * 8;
+      }
+
+      const totalGeral = filtrados.reduce((soma, r) => soma + parseInt(r.quantidade || 0), 0);
+      docPdf.text(`Total geral: ${totalGeral}`, 14, finalY);
+
+      docPdf.save('Relatorio_Toner.pdf');
+    } catch (err) {
+      console.error('Erro ao gerar PDF:', err);
+      alert('Erro ao gerar PDF. Veja console para detalhes.');
     }
-
-    let titulo = 'Relatório de Trocas de Toner e Tinta';
-    const mesFiltro = filtroMes.value;
-    if (mesFiltro) {
-      const [ano, mesNum] = mesFiltro.split('-');
-      const nomesMes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-      titulo += ` - ${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
-    }
-
-    docPdf.text(titulo, 14, 15);
-    docPdf.autoTable({
-      startY: 25,
-      head: [['Escola', 'Modelo', 'Quantidade', 'Data']],
-      body: filtrados.map(r => [r.escola, r.modelo, r.quantidade, r.data]),
-    });
-
-    const totalGeral = filtrados.reduce((soma, r) => soma + parseInt(r.quantidade || 0), 0);
-    docPdf.text(`Total geral: ${totalGeral}`, 14, docPdf.lastAutoTable.finalY + 10);
-
-    docPdf.save('Relatorio_Toner.pdf');
   });
 
   // Impressão
@@ -338,6 +365,9 @@
           th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
           th { background-color: #eee; }
           tfoot td { font-weight: bold; }
+          @media print {
+            button { display: none; }
+          }
         </style>
       </head>
       <body>
@@ -376,8 +406,11 @@
 
         <script>
           window.onload = function(){
-            window.print();
-            setTimeout(()=>window.close(), 500);
+            setTimeout(() => {
+              window.print();
+              // fecha só após breve espera para garantir execução
+              setTimeout(()=> window.close(), 700);
+            }, 200);
           };
         </script>
       </body>
