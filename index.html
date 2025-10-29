@@ -72,7 +72,7 @@
 <!-- Firebase modular SDKs -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-app.js";
-  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, deleteDoc, updateDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-firestore.js";
+  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBSAMAhiEbBPCNqNpv-dM64Pa_xclwqc54",
@@ -229,7 +229,6 @@
     });
   }
 
-  // --- NOVA FUNÇÃO: editar listas de escolas e modelos ---
   btnEditarListas.addEventListener('click', async ()=>{
     const escolas = Array.from(new Set(registros.map(r=>r.escola).filter(Boolean)));
     const modelos = Array.from(new Set(registros.map(r=>r.modelo).filter(Boolean)));
@@ -266,35 +265,133 @@
     atualizarTabela();
   });
 
-  // --- MELHORADO: Exportar PDF filtrando por mês ---
-  btnExportarPDF.addEventListener('click', ()=>{
-    const { jsPDF } = window.jspdf;
-    const docPdf = new jsPDF();
+  // ---- UNIFICADO: Exportar PDF e Imprimir Relatório ----
+  function gerarDadosFiltrados() {
     const escolaFiltro = filtroEscola.value.toLowerCase();
     const mesFiltro = filtroMes.value;
-
     const filtrados = registros.filter(r=>{
       const escolaOk = !escolaFiltro || (r.escola && r.escola.toLowerCase().includes(escolaFiltro));
       const mesOk = !mesFiltro || (r.data && r.data.startsWith(mesFiltro));
       return escolaOk && mesOk;
     });
+    return filtrados;
+  }
 
-    if(filtrados.length===0){ alert('Não há registros para exportar.'); return; }
+  // PDF
+  btnExportarPDF.addEventListener('click', ()=>{
+    const { jsPDF } = window.jspdf;
+    const docPdf = new jsPDF();
+
+    const filtrados = gerarDadosFiltrados();
+    if (filtrados.length === 0) {
+      alert('Não há registros para exportar.');
+      return;
+    }
 
     let titulo = 'Relatório de Trocas de Toner e Tinta';
-    if(mesFiltro){
+    const mesFiltro = filtroMes.value;
+    if (mesFiltro) {
       const [ano, mesNum] = mesFiltro.split('-');
       const nomesMes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
       titulo += ` - ${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
     }
 
-    docPdf.text(titulo,14,15);
+    docPdf.text(titulo, 14, 15);
     docPdf.autoTable({
-      startY:25,
-      head:[['Escola','Modelo','Quantidade','Data']],
-      body: filtrados.map(r=>[r.escola,r.modelo,r.quantidade,r.data])
+      startY: 25,
+      head: [['Escola', 'Modelo', 'Quantidade', 'Data']],
+      body: filtrados.map(r => [r.escola, r.modelo, r.quantidade, r.data]),
     });
-    docPdf.save('Registros_Toner.pdf');
+
+    const totalGeral = filtrados.reduce((soma, r) => soma + parseInt(r.quantidade || 0), 0);
+    docPdf.text(`Total geral: ${totalGeral}`, 14, docPdf.lastAutoTable.finalY + 10);
+
+    docPdf.save('Relatorio_Toner.pdf');
+  });
+
+  // Impressão
+  btnImprimirRelatorio.addEventListener('click', ()=>{
+    const filtrados = gerarDadosFiltrados();
+    if (filtrados.length === 0) {
+      alert('Não há registros para imprimir.');
+      return;
+    }
+
+    const mesFiltro = filtroMes.value;
+    let mesTexto = '';
+    if (mesFiltro) {
+      const [ano, mesNum] = mesFiltro.split('-');
+      const nomesMes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+      mesTexto = `${nomesMes[parseInt(mesNum)-1]} de ${ano}`;
+    }
+
+    const totalGeral = filtrados.reduce((soma, r) => soma + parseInt(r.quantidade || 0), 0);
+
+    let html = `
+      <html>
+      <head>
+        <title>Relatório de Trocas de Toner e Tinta</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h2 { text-align: center; }
+          table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+          th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+          th { background-color: #eee; }
+          tfoot td { font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <h2>Relatório de Trocas de Toner e Tinta</h2>
+        <p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
+        ${mesTexto ? `<p><strong>Mês do Relatório:</strong> ${mesTexto}</p>` : ''}
+        ${filtroEscola.value ? `<p><strong>Escola:</strong> ${escapeHtml(filtroEscola.value)}</p>` : ''}
+
+        <table>
+          <thead>
+            <tr>
+              <th>Escola</th>
+              <th>Modelo</th>
+              <th>Quantidade</th>
+              <th>Data</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filtrados.map(r => `
+              <tr>
+                <td>${escapeHtml(r.escola)}</td>
+                <td>${escapeHtml(r.modelo)}</td>
+                <td>${r.quantidade}</td>
+                <td>${r.data}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2">Total Geral</td>
+              <td>${totalGeral}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <script>
+          window.onload = function(){
+            window.print();
+            setTimeout(()=>window.close(), 500);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    const novaJanela = window.open('', '_blank');
+    if (!novaJanela) {
+      alert('O navegador bloqueou o pop-up. Permita pop-ups para usar a impressão.');
+      return;
+    }
+    novaJanela.document.open();
+    novaJanela.document.write(html);
+    novaJanela.document.close();
   });
 
   function escapeHtml(str){
